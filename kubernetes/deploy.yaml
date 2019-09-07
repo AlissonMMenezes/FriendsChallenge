@@ -1,0 +1,45 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: challenge
+spec:
+  selector:
+    app: challenge
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+      nodePort: 30500
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: challenge-deploy
+  labels:
+    app: challenge
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: challenge
+  template:
+    metadata:
+      labels:
+        app: challenge
+    spec:
+      containers:
+      - name: challenge
+        image: 360560397478.dkr.ecr.us-east-2.amazonaws.com/challenge
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          value: "YOUR_ACCESS_KEY"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "YOUR_SECRET_KEY"
+        - name: S3_BUCKET
+          value: "challenge-alissonfriendsbucket-1aeyanfextgbh"
+        - name: MYSQL_Connection
+          value: "mysql://<YOUR_USER>:<YOUR_PASSSWORD>@cc3zrcp53x9jie.cy64xkoh0drv.us-east-2.rds.amazonaws.com/challengedb"
+        ports:
+        - containerPort: 5000

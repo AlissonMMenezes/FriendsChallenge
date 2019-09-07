@@ -2,3 +2,5 @@ flask
 Flask-Migrate
 flask_script
 Flask-MySQLdb
+requests
+boto3

@@ -9,6 +9,7 @@ import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_script import Manager
 from flask_migrate import Migrate, MigrateCommand
+from datetime import datetime
 
 
 app = Flask(__name__)
@@ -24,6 +25,11 @@ class Images(db.Model):
     path = db.Column(db.String(128))
     timestamp = db.Column(db.String(128))
 
+    def __init__(self, name, url, path):
+        self.name = name
+        self.original_url = url
+        self.path = path
+        self.timestamp = datetime.now()
 
 @app.route("/")
 def index():
@@ -45,15 +51,22 @@ def save_image():
 
     print("[+] Sending to s3")
     s3_client.upload_file(image_name,os.environ["S3_BUCKET"],image_name)
-
     os.remove(image_name)
+
+    image_db = Images(image_name,image_url,os.environ["S3_BUCKET"]+"/"+image_name)
+    db.session.add(image_db)
+    db.session.commit()
+
     return jsonify({"message":"task completed!"}), 200 
 
 
 @app.route("/api/image",methods=["GET"])
 def get_images():
-
-    return jsonify({"message":"task completed!"}), 200 
+    all_images = db.session.query(Images).all()
+    list_images = []
+    for image in all_images:
+        list_images.append({"name":image.name,"path":image.path})
+    return jsonify({"images":list_images}), 200 
 
 
 if __name__ == "__main__":
