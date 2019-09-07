@@ -1,0 +1,93 @@
+Resources:
+  # IAM Role for deploy de EKS Cluster
+  eksrole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - eks.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+  # VPC to run the infrastructure
+  challengevpc:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: "192.168.0.0/16"
+      EnableDnsHostnames: "true"
+      EnableDnsSupport: "true"
+  # Security group that allows all traffic
+  challengesg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to client host
+      VpcId:
+          Ref: challengevpc
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 0
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 0
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+  # Subnet A - that runs in us-east-2a
+  challengesubneta:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: "us-east-2a"
+      CidrBlock: "192.168.0.0/24"
+      VpcId:
+        Ref: "challengevpc"
+  # Subnet B - That runs in us-east-2b
+  challengesubnetb:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: "us-east-2b"
+      CidrBlock: "192.168.1.0/24"
+      VpcId:
+        Ref: "challengevpc"
+  # S3 Bucket to store images
+  alissonfriendsbucket:
+    Type: AWS::S3::Bucket
+  # EKS Cluster to deploy application
+  challengecluster:
+    Type: AWS::EKS::Cluster
+    Properties: 
+      Name: "challenge"
+      ResourcesVpcConfig: 
+        SubnetIds:
+        - Ref: "challengesubneta" 
+        - Ref: "challengesubnetb" 
+      RoleArn: !GetAtt eksrole.Arn
+  # ECR Repo to store application image
+  challengerepo:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: "challenge"
+  # MySQL database to store the image data    
+  challengedb: 
+    Type: "AWS::RDS::DBInstance"
+    DeletionPolicy: Snapshot
+    Properties: 
+      AllocatedStorage: "5"
+      DBInstanceClass: "db.t3.micro"
+      DBName: "challengedb"
+      Engine: MySQL
+      EngineVersion: "8.0"
+      MasterUserPassword: 
+        Ref: DBPassword
+      MasterUsername: 
+        Ref: DBUser
+Parameters:
+  DBUser:
+    Type: "String"
+  DBPassword:
+    Type: "String"
