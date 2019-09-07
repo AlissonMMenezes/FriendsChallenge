@@ -323,6 +323,7 @@ Create a temporary container to run the migrations:
     docker run --rm -ti --env S3_BUCKET="challenge-alissonfriendsbucket-1aeyanfextgbh" --env MYSQL_Connection="mysql://<YOUR_DATABASE_USER>:<YOUR_DATABASE_PASSWORD>@cc3zrcp53x9jie.cy64xkoh0drv.us-east-2.rds.amazonaws.com/challenge"   -p 5000:5000 challenge bash
 
 Inside of container run that commands:
+
          cd /opt
          flask db migrate
          flask db upgrade    
