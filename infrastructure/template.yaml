@@ -1,3 +1,8 @@
+#
+#
+# It is a CloudFormation template that provision an intire infrastructure to deploy applications on top of kubernetes
+#
+#
 Parameters:
   DBUser:
     Type: "String"
@@ -25,8 +30,43 @@ Resources:
     Type: AWS::EC2::VPC
     Properties: 
       CidrBlock: "192.168.0.0/16"
-      EnableDnsHostnames: "true"
-      EnableDnsSupport: "true"
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+  
+  # InternetAccess to VPC
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId:
+        Ref: InternetGateway
+      VpcId: 
+        Ref: challengevpc
+  
+  #Creating routes
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: challengevpc
+      Tags:
+      - Key: Name
+        Value: Public Subnets
+      - Key: Network
+        Value: Public
+
+  Route:
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+    
   # Security group that allows all traffic
   challengesg:
     Type: AWS::EC2::SecurityGroup
@@ -44,22 +84,42 @@ Resources:
         FromPort: 0
         ToPort: 65535
         CidrIp: 0.0.0.0/0
+
   # Subnet A - that runs in us-east-2a
   challengesubneta:
     Type: AWS::EC2::Subnet
     Properties: 
       AvailabilityZone: "us-east-2a"
-      CidrBlock: "192.168.0.0/24"
+      CidrBlock: "192.168.64.0/18"
       VpcId:
         Ref: "challengevpc"
+
   # Subnet B - That runs in us-east-2b
   challengesubnetb:
     Type: AWS::EC2::Subnet
     Properties: 
       AvailabilityZone: "us-east-2b"
-      CidrBlock: "192.168.1.0/24"
+      CidrBlock: "192.168.128.0/18"
       VpcId:
         Ref: "challengevpc"
+
+  # Subnets accessing internet 
+  subnetaAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: challengesubneta
+      RouteTableId:
+        Ref: RouteTable
+
+  subnetBAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: challengesubnetb
+      RouteTableId:
+        Ref: RouteTable
+
   # S3 Bucket to store images
   alissonfriendsbucket:
     Type: AWS::S3::Bucket
@@ -110,7 +170,7 @@ Resources:
 
   NodeSecurityGroupIngress:
     Type: AWS::EC2::SecurityGroupIngress
-    DependsOn: NodeSecurityGroup
+    DependsOn: challengesg
     Properties:
       Description: Allow node to communicate with each other
       GroupId:
@@ -123,55 +183,63 @@ Resources:
 
   NodeSecurityGroupFromControlPlaneIngress:
     Type: AWS::EC2::SecurityGroupIngress
-    DependsOn: NodeSecurityGroup
+    DependsOn: challengesg
     Properties:
       Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
-      GroupId: !Ref NodeSecurityGroup
-      SourceSecurityGroupId: !Ref challengesg
+      GroupId:
+        Ref: challengesg
+      SourceSecurityGroupId:
+        Ref: challengesg
       IpProtocol: tcp
       FromPort: 1025
       ToPort: 65535
 
   ControlPlaneEgressToNodeSecurityGroup:
     Type: AWS::EC2::SecurityGroupEgress
-    DependsOn: NodeSecurityGroup
+    DependsOn: challengesg
     Properties:
       Description: Allow the cluster control plane to communicate with worker Kubelet and pods
-      GroupId: !Ref challengesg
-      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      GroupId:
+        Ref: challengesg
+      DestinationSecurityGroupId:
+        Ref: challengesg
       IpProtocol: tcp
       FromPort: 1025
       ToPort: 65535
 
   NodeSecurityGroupFromControlPlaneOn443Ingress:
     Type: AWS::EC2::SecurityGroupIngress
-    DependsOn: NodeSecurityGroup
+    DependsOn: challengesg
     Properties:
       Description: Allow pods running extension API servers on port 443 to receive communication from cluster control plane
-      GroupId: !Ref NodeSecurityGroup
-      SourceSecurityGroupId: !Ref challengesg
+      GroupId:
+        Ref: challengesg
+      SourceSecurityGroupId:
+        Ref: challengesg
       IpProtocol: tcp
       FromPort: 443
       ToPort: 443
 
   ControlPlaneEgressToNodeSecurityGroupOn443:
     Type: AWS::EC2::SecurityGroupEgress
-    DependsOn: NodeSecurityGroup
+    DependsOn: challengesg
     Properties:
       Description: Allow the cluster control plane to communicate with pods running extension API servers on port 443
       GroupId: !Ref challengesg
-      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      DestinationSecurityGroupId:
+        Ref: challengesg
       IpProtocol: tcp
       FromPort: 443
       ToPort: 443
 
   challengesgIngress:
     Type: AWS::EC2::SecurityGroupIngress
-    DependsOn: NodeSecurityGroup
+    DependsOn: challengesg
     Properties:
       Description: Allow pods to communicate with the cluster API Server
       GroupId: !Ref challengesg
-      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId:
+        Ref: challengesg
       IpProtocol: tcp
       ToPort: 443
       FromPort: 443
@@ -179,9 +247,10 @@ Resources:
   NodeGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      DesiredCapacity: "1"
-      LaunchConfigurationName: !Ref NodeLaunchConfig
-      MinSize: "1"
+      DesiredCapacity: "2"
+      LaunchConfigurationName:
+        Ref: NodeLaunchConfig
+      MinSize: "2"
       MaxSize: "2"
       VPCZoneIdentifier: 
         - Ref: "challengesubneta"
@@ -203,12 +272,13 @@ Resources:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       AssociatePublicIpAddress: true
-      IamInstanceProfile: !Ref NodeInstanceProfile
-      ImageId: "ami-0f841722be384ed96"
-      InstanceType: "t3.micro"
+      IamInstanceProfile:
+        Ref: NodeInstanceProfile
+      ImageId: "ami-027683840ad78d833"
+      InstanceType: "t3.small"
       KeyName: "alisson"
       SecurityGroups:
-        - !Ref NodeSecurityGroup
+        - Ref: challengesg
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:

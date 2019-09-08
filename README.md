@@ -3,7 +3,7 @@
 
 # Friendsurance Challenge
 
-  
+* This doc still not finished, i have some security group problems *  
 
   
 
@@ -310,6 +310,52 @@ To know if you are connected to cluster you can run the following commands:
         kube-system   Active   5m28s
         alisson@alisson-avell:~/FriendsChallenge$ 
 
+Is mandatory to add worker nodes to the kubernetes cluster, the CloudFormation create a Role to join worker nodes in the cluster, to see that role run the command:
+
+        aws iam list-roles
+
+You will see something like this:
+
+        {
+            "Description": "", 
+            "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17", 
+                "Statement": [
+                    {
+                        "Action": "sts:AssumeRole", 
+                        "Effect": "Allow", 
+                        "Principal": {
+                            "Service": "ec2.amazonaws.com"
+                        }
+                    }
+                ]
+            }, 
+            "MaxSessionDuration": 3600, 
+            "RoleId": "AROAVH4YTBSTNDZDYUOAU", 
+            "CreateDate": "2019-09-08T16:06:27Z", 
+            "RoleName": "challenge-NodeInstanceRole-13WTUG51LAGD2", 
+            "Path": "/", 
+            "Arn": "arn:aws:iam::360560397478:role/challenge-NodeInstanceRole-13WTUG51LAGD2"
+        }
+
+The ARN is importante thing, so get this value and replace in kubernetes/nodes.yaml inside this repo.
+You should replace this line:
+
+        - rolearn:  arn:aws:iam::360560397478:role/challenge-NodeInstanceRole-1Q4O4RA5S2MQ0 
+
+After that run the command:
+
+        $ kubectl apply -f kubernetes/nodes.yaml 
+        configmap/aws-auth created
+
+Now you can see the nodes in your cluster with this command:
+
+        $ kubectl get nodes
+        NAME                                            STATUS   ROLES    AGE     VERSION
+        ip-192-168-114-38.us-east-2.compute.internal    Ready    <none>   3m53s   v1.13.8-eks-cd3eb0
+        ip-192-168-166-107.us-east-2.compute.internal   Ready    <none>   3m51s   v1.13.8-eks-cd3eb0
+
+
 ### Building application image
 
 I'm considering that you already have docker installed in your computer, if you don't please install: https://docs.docker.com/install/
@@ -318,16 +364,34 @@ In the repository we have a Dockerfile, to create the image, run the command:
 
         docker build . -t challenge
 
+Get your RDS endpoint:
+
+        aws rds describe-db-instances
+
+You should see an output similitar to this:
+
+        "DBName": "challengedb", 
+            "PreferredMaintenanceWindow": "wed:04:01-wed:04:31", 
+            "Endpoint": {
+                "HostedZoneId": "Z2XHWR1WZ565X2", 
+                "Port": 3306, 
+                "Address": "cc8ieyo3kmj6w1.cy64xkoh0drv.us-east-2.rds.amazonaws.com"
+            }, 
+            "DBInstanceStatus": "available",
+
+
 Create a temporary container to run the migrations:
-    docker run --rm -ti --env S3_BUCKET="challenge-alissonfriendsbucket-1aeyanfextgbh" --env MYSQL_Connection="mysql://<YOUR_DATABASE_USER>:<YOUR_DATABASE_PASSWORD>@cc3zrcp53x9jie.cy64xkoh0drv.us-east-2.rds.amazonaws.com/challenge"   -p 5000:5000 challenge bash
+    docker run --rm -ti --env S3_BUCKET="challenge-alissonfriendsbucket-1aeyanfextgbh" --env MYSQL_Connection="mysql://<YOUR_DATABASE_USER>:<YOUR_DATABASE_PASSWORD>@<DB_ENDPOINT>/challengedb"   -p 5000:5000 challenge bash
 
 Inside of container run that commands:
-         cd /opt
-         flask db migrate
-         flask db upgrade    
+        export LC_ALL=C.UTF-8
+        export LANG=C.UTF-8
+        cd /opt
+        flask db migrate
+        flask db upgrade    
 
 Now exit the container and push to the ECR repository:
-        aws ecr get login
+        aws ecr get-login
 
 In the end of the output you are going to see this an url similar to that:
      https://360560397478.dkr.ecr.us-east-2.amazonaws.com
@@ -347,4 +411,31 @@ At this point we have an image of our application inside ECR, we are ready to de
 
 ### Deploying
 
-Will be written in soon
+Inside this repo there a kubernetes folder, where you gonna find a file deploy.yaml.
+
+First you need to replace some environment vars:
+
+        - name: AWS_ACCESS_KEY_ID
+          value: "YOUR_ACCESS_KEY"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "YOUR_SECRET_KEY"
+        - name: S3_BUCKET
+          value: "challenge-alissonfriendsbucket-1aeyanfextgbh"
+        - name: MYSQL_Connection
+          value: "mysql://<YOUR_USER>:<YOUR_PASSSWORD>@cc3zrcp53x9jie.cy64xkoh0drv.us-east-2.rds.amazonaws.com/challengedb"
+
+
+ Now run in the terminal:
+
+        kubectl apply -f kubernetes/deploy.yaml
+        
+        service/challenge created
+        deployment.apps/challenge-deploy created
+
+You can get an public ip address from a instance using:
+
+        aws ec2 describe-instances
+
+And acessing on browser:
+
+        http://18.222.162.46:30500/api/image
